@@ -1,8 +1,12 @@
-﻿from contextlib import asynccontextmanager
-from datetime import date, datetime
-from typing import Literal
+﻿import os
+from contextlib import asynccontextmanager
+from datetime import datetime
+from pathlib import Path
+from typing import Any, Literal
 
-from fastapi import Depends, FastAPI, HTTPException
+import httpx
+from dotenv import load_dotenv
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select, text
@@ -13,13 +17,47 @@ from models import OutputField as OutputFieldModel
 from models import Project as ProjectModel
 
 
+# CONFIGURAÇÕES
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+load_dotenv(PROJECT_ROOT / ".env")
+
+N8N_WEBHOOK_URL = os.getenv(
+    "N8N_WEBHOOK_URL",
+    "",
+).strip()
+
+try:
+    N8N_TIMEOUT_SECONDS = float(
+        os.getenv("N8N_TIMEOUT_SECONDS", "30"),
+    )
+except ValueError:
+    N8N_TIMEOUT_SECONDS = 30.0
+
+
+# CICLO DE VIDA DA APLICAÇÃO
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Cria as tabelas caso ainda não existam.
+    """
+    Executa ações ao iniciar e encerrar a API.
+    """
+
+    # Cria as tabelas do PostgreSQL caso ainda não existam.
     Base.metadata.create_all(bind=engine)
+
+    # Cliente HTTP reutilizável para comunicação com o n8n.
+    app.state.http_client = httpx.AsyncClient(
+        timeout=httpx.Timeout(N8N_TIMEOUT_SECONDS),
+    )
 
     yield
 
+    await app.state.http_client.aclose()
+
+
+# APLICAÇÃO FASTAPI
 
 app = FastAPI(
     title="Ylume API",
@@ -27,7 +65,7 @@ app = FastAPI(
         "API da plataforma Ylume para estruturação "
         "inteligente de dados."
     ),
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -43,6 +81,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+# SCHEMAS PYDANTIC
 
 class OutputFieldInput(BaseModel):
     name: str = Field(
@@ -114,23 +154,137 @@ class ProjectResponse(BaseModel):
     fields: list[OutputFieldResponse]
 
 
-def generate_mock_value(field: OutputFieldInput):
-    values = {
-        "text": f"Conteúdo estruturado para {field.name}",
-        "number": 0,
-        "boolean": False,
-        "date": date.today().isoformat(),
-        "category": "Não classificado",
-    }
+class N8NPreviewResponse(BaseModel):
+    success: bool = True
+    provider: str
+    project_name: str | None = None
+    structured_data: dict[str, Any]
+    source_text: str | None = None
+    processed_at: datetime | str | None = None
 
-    return values[field.field_type]
 
+# FUNÇÕES AUXILIARES
+
+async def send_preview_to_n8n(
+    payload: ProjectPreviewRequest,
+    http_client: httpx.AsyncClient,
+) -> dict[str, Any]:
+    """
+    Envia o projeto para o webhook de produção do n8n.
+    """
+
+    if not N8N_WEBHOOK_URL:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "N8N_WEBHOOK_URL não foi configurada "
+                "no arquivo .env."
+            ),
+        )
+
+    request_body = payload.model_dump(
+        mode="json",
+    )
+
+    try:
+        response = await http_client.post(
+            N8N_WEBHOOK_URL,
+            json=request_body,
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+            },
+        )
+
+        response.raise_for_status()
+
+    except httpx.ConnectError as error:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Não foi possível conectar ao n8n. "
+                "Confirme se o container ylume-n8n está ligado "
+                "e se o workflow está publicado."
+            ),
+        ) from error
+
+    except httpx.TimeoutException as error:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                "O n8n demorou mais que o permitido "
+                "para responder."
+            ),
+        ) from error
+
+    except httpx.HTTPStatusError as error:
+        status_code = error.response.status_code
+
+        try:
+            n8n_error = error.response.json()
+        except ValueError:
+            n8n_error = error.response.text[:500]
+
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": (
+                    "O n8n retornou um erro durante "
+                    "o processamento."
+                ),
+                "n8n_status_code": status_code,
+                "n8n_response": n8n_error,
+            },
+        ) from error
+
+    except httpx.HTTPError as error:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "Ocorreu uma falha de comunicação "
+                "entre o FastAPI e o n8n."
+            ),
+        ) from error
+
+    try:
+        response_data = response.json()
+    except ValueError as error:
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                "O n8n respondeu, mas o conteúdo "
+                "não é um JSON válido."
+            ),
+        ) from error
+
+    try:
+        validated_response = N8NPreviewResponse.model_validate(
+            response_data,
+        )
+    except Exception as error:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "message": (
+                    "O n8n retornou um JSON com estrutura "
+                    "diferente da esperada."
+                ),
+                "received_response": response_data,
+            },
+        ) from error
+
+    return validated_response.model_dump(
+        mode="json",
+    )
+
+
+# ROTAS GERAIS
 
 @app.get("/")
 async def root():
     return {
         "message": "Ylume API online",
-        "version": "0.3.0",
+        "version": "0.4.0",
     }
 
 
@@ -139,7 +293,8 @@ async def health():
     return {
         "status": "ok",
         "service": "ylume-api",
-        "version": "0.3.0",
+        "version": "0.4.0",
+        "n8n_configured": bool(N8N_WEBHOOK_URL),
     }
 
 
@@ -149,6 +304,7 @@ def database_health(
 ):
     try:
         database.execute(text("SELECT 1"))
+
     except Exception as error:
         raise HTTPException(
             status_code=503,
@@ -160,6 +316,8 @@ def database_health(
         "database": "postgresql",
     }
 
+
+# ROTAS DE PROJETOS
 
 @app.post(
     "/projects",
@@ -186,9 +344,21 @@ def create_project(
         for index, field in enumerate(payload.fields)
     ]
 
-    database.add(project)
-    database.commit()
-    database.refresh(project)
+    try:
+        database.add(project)
+        database.commit()
+        database.refresh(project)
+
+    except Exception as error:
+        database.rollback()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Não foi possível salvar o projeto "
+                "no PostgreSQL."
+            ),
+        ) from error
 
     return project
 
@@ -206,7 +376,9 @@ def list_projects(
         .order_by(ProjectModel.created_at.desc())
     )
 
-    return list(database.scalars(query).all())
+    return list(
+        database.scalars(query).all(),
+    )
 
 
 @app.get(
@@ -234,23 +406,28 @@ def get_project(
     return project
 
 
+# ROTA DE PROCESSAMENTO PELO N8N
+
 @app.post("/projects/preview")
 async def create_project_preview(
     payload: ProjectPreviewRequest,
+    request: Request,
 ):
-    structured_data = {
-        field.name: generate_mock_value(field)
-        for field in payload.fields
-    }
+    http_client: httpx.AsyncClient = (
+        request.app.state.http_client
+    )
+
+    n8n_result = await send_preview_to_n8n(
+        payload=payload,
+        http_client=http_client,
+    )
 
     return {
-        "project_name": payload.project_name,
+        **n8n_result,
         "status": "preview_generated",
-        "provider": "mock",
         "input": {
             "context": payload.context,
             "objective": payload.objective,
             "sample_text": payload.sample_text,
         },
-        "structured_data": structured_data,
     }
