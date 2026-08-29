@@ -10,6 +10,7 @@ services:
       - --api.dashboard=false
       - --providers.docker=true
       - --providers.docker.exposedbydefault=false
+      - --providers.docker.network=ylume-proxy
 
       - --entrypoints.web.address=:80
       - --entrypoints.websecure.address=:443
@@ -55,6 +56,7 @@ services:
 
     labels:
       - traefik.enable=true
+      - traefik.docker.network=ylume-proxy
       - traefik.http.routers.ylume-frontend.rule=Host(`${APP_DOMAIN}`)
       - traefik.http.routers.ylume-frontend.entrypoints=websecure
       - traefik.http.routers.ylume-frontend.tls=true
@@ -120,6 +122,7 @@ services:
 
     labels:
       - traefik.enable=true
+      - traefik.docker.network=ylume-proxy
       - traefik.http.routers.ylume-api.rule=Host(`${API_DOMAIN}`)
       - traefik.http.routers.ylume-api.entrypoints=websecure
       - traefik.http.routers.ylume-api.tls=true
@@ -150,7 +153,7 @@ services:
       N8N_PORT: 5678
       N8N_PROTOCOL: https
 
-      WEBHOOK_URL: https://${N8N_DOMAIN}/
+      N8N_WEBHOOK_URL: https://${N8N_DOMAIN}/
       N8N_EDITOR_BASE_URL: https://${N8N_DOMAIN}/
       N8N_SECURE_COOKIE: "true"
 
@@ -181,6 +184,7 @@ services:
 
     labels:
       - traefik.enable=true
+      - traefik.docker.network=ylume-proxy
       - traefik.http.routers.ylume-n8n.rule=Host(`${N8N_DOMAIN}`)
       - traefik.http.routers.ylume-n8n.entrypoints=websecure
       - traefik.http.routers.ylume-n8n.tls=true
