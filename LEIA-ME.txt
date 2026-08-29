@@ -1,0 +1,102 @@
+YLUME — DASHBOARD V2 + CSV EM LOTE
+===================================
+
+VERSÃO
+------
+Backend: 0.8.0
+
+ESTE PACOTE ENTREGA 2 ETAPAS
+-----------------------------
+1. Dashboard v2 inteligente
+2. Processamento em lote por CSV
+
+ARQUIVOS PARA SUBSTITUIR
+------------------------
+1. backend/main.py
+2. frontend/src/App.jsx
+3. frontend/src/App.css
+
+NÃO ALTERAR
+-----------
+- models.py
+- execution_models.py
+- database.py
+- docker-compose.yml
+- .env
+- workflow do n8n
+- volumes Docker
+
+DASHBOARD V2
+------------
+O dashboard agora lê os campos definidos no schema de cada projeto.
+
+Exemplos:
+- category / boolean / date: distribuição e percentuais
+- number: média, mínimo e máximo
+- text: distribuição quando houver poucos valores únicos; caso contrário,
+  mostra volume preenchido e quantidade de valores únicos
+
+O backend tenta encontrar as chaves do structured_data sem diferenciar
+maiúsculas/minúsculas.
+
+PROCESSAMENTO CSV
+-----------------
+- O CSV é lido no navegador; não precisa instalar python-multipart.
+- Aceita CSV separado por ; , ou TAB.
+- Suporta campos entre aspas e aspas duplicadas.
+- O usuário escolhe qual coluna contém o texto não estruturado.
+- Cada linha vira uma execução na tabela executions.
+- O lote roda com no máximo 2 chamadas simultâneas ao n8n/Ollama.
+- Por segurança do MVP local, esta versão limita a 25 registros por lote.
+- Linhas que falham também ficam registradas como success=false,
+  permitindo que a taxa de sucesso do dashboard reflita o lote.
+
+NOVAS ROTAS
+-----------
+POST /projects/{project_id}/batch
+GET  /projects/{project_id}/dashboard   (agora inclui field_insights)
+
+COMO APLICAR
+------------
+1. Substitua os 3 arquivos pelos arquivos deste pacote.
+
+2. Reinicie o FastAPI:
+
+cd "C:\Users\Ysa Martinho\Documents\ylume-platform\backend"
+.\.venv\Scripts\Activate.ps1
+python -m uvicorn main:app --host 127.0.0.1 --port 8001
+
+3. Se o frontend não estiver rodando:
+
+cd "C:\Users\Ysa Martinho\Documents\ylume-platform\frontend"
+npm run dev
+
+4. Abra um projeto salvo no Histórico.
+
+TESTE DO DASHBOARD V2
+---------------------
+Clique em:
+04. Dashboard
+
+A seção "Indicadores gerados pelo schema" deverá aparecer.
+Quanto mais execuções o projeto possuir, mais úteis serão as distribuições.
+
+TESTE DO CSV
+------------
+1. Abra um projeto salvo.
+2. Vá em 03. Processamento.
+3. Em "CSV · LOTE", selecione exemplo_chamados.csv.
+4. Escolha a coluna "mensagem".
+5. Clique em "Processar CSV com IA".
+6. Aguarde. Ollama local pode levar alguns segundos por registro.
+7. Abra 04. Dashboard novamente.
+
+IMPORTANTE
+----------
+Não rode docker compose down -v.
+O n8n e o PostgreSQL devem estar ligados antes do processamento.
+
+PRÓXIMO PACOTE
+--------------
+- Tela Dataset
+- Exportação CSV / Excel / JSON

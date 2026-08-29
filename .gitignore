@@ -1,18 +1,43 @@
-.env
-.env.*
-!.env.example
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-node_modules/
-dist/
-
+# Virtual environments
 .venv/
 venv/
-__pycache__/
-*.pyc
+env/
 
-postgres_data/
-n8n_data/
-ollama_data/
+# Node / Vite
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-.vscode/
+# Environment / secrets
+.env
+.env.local
+.env.*.local
+
+# OS / editors
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Local databases / logs
+*.sqlite
+*.sqlite3
+*.db
 *.log
+
+# Local temp / exports
+exports/
+tmp/
+temp/

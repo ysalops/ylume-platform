@@ -1,0 +1,188 @@
+YLUME — PRODUÇÃO 2 / DOCKER + LIGHTSAIL
+==============================================
+
+O servidor já deve possuir:
+- Ubuntu 24.04
+- Docker
+- Docker Compose
+- Git
+- /opt/ylume
+- 2 GB de swap
+- Firewall público somente 22, 80 e 443
+
+ESTRUTURA NO PROJETO LOCAL
+--------------------------
+Copie estes arquivos para a RAIZ do projeto ylume-platform:
+
+docker-compose.prod.yml
+.env.prod.example
+.dockerignore
+postgres/
+
+Copie para backend/:
+
+Dockerfile
+.dockerignore
+requirements.txt
+
+Copie para frontend/:
+
+Dockerfile
+nginx.conf
+.dockerignore
+
+NÃO substitua:
+- backend/main.py
+- backend/models.py
+- backend/auth.py
+- backend/auth_models.py
+- backend/auth_schema.py
+- backend/database.py
+- backend/execution_models.py
+- frontend/src/
+- package.json
+- package-lock.json
+- vite.config.js
+
+Esses arquivos continuam sendo os da Produção 1 que já estão funcionando.
+
+
+ARQUITETURA DE PRODUÇÃO
+-----------------------
+Internet
+   |
+   v
+Traefik :80/:443
+   |
+   +--> APP_DOMAIN  -> frontend (Nginx + React)
+   |
+   +--> API_DOMAIN  -> backend (FastAPI)
+   |
+   +--> N8N_DOMAIN  -> n8n
+
+Backend / n8n
+   |
+   v
+PostgreSQL interno
+
+PostgreSQL, FastAPI e n8n NÃO publicam portas diretamente no host.
+
+
+ANTES DO PRIMEIRO DEPLOY
+-------------------------
+Precisaremos criar três registros DNS apontando para o IP estático da Lightsail:
+
+APP_DOMAIN
+API_DOMAIN
+N8N_DOMAIN
+
+Exemplo:
+app.ylume.dev.br        -> IP estático
+api.ylume.dev.br        -> IP estático
+automation.ylume.dev.br -> IP estático
+
+NÃO faça isso ainda se os domínios finais não estiverem decididos.
+
+
+SEGREDOS DE PRODUÇÃO
+--------------------
+No servidor:
+
+cd /opt/ylume
+
+cp .env.prod.example .env
+
+chmod 600 .env
+
+Gere senhas/chaves fortes, por exemplo:
+
+python3 -c "import secrets; print(secrets.token_urlsafe(48))"
+
+Use valores diferentes para:
+- POSTGRES_PASSWORD
+- JWT_SECRET_KEY
+- N8N_ENCRYPTION_KEY
+
+Nunca publique o .env.
+
+
+PRIMEIRO BUILD
+--------------
+Quando o código completo estiver em /opt/ylume:
+
+cd /opt/ylume
+
+docker compose \
+  --env-file .env \
+  -f docker-compose.prod.yml \
+  config
+
+Se estiver tudo certo:
+
+docker compose \
+  --env-file .env \
+  -f docker-compose.prod.yml \
+  build
+
+Depois:
+
+docker compose \
+  --env-file .env \
+  -f docker-compose.prod.yml \
+  up -d
+
+
+STATUS
+------
+docker compose \
+  --env-file .env \
+  -f docker-compose.prod.yml \
+  ps
+
+
+LOGS
+----
+Backend:
+
+docker logs ylume-backend --tail 100
+
+Frontend:
+
+docker logs ylume-frontend --tail 100
+
+n8n:
+
+docker logs ylume-n8n --tail 100
+
+Traefik / certificados:
+
+docker logs ylume-traefik --tail 100
+
+PostgreSQL:
+
+docker logs ylume-postgres --tail 100
+
+
+IMPORTANTE SOBRE A IA
+---------------------
+Este pacote coloca a plataforma na AWS, mas NÃO migra ainda o modelo Gemma/Ollama.
+
+O workflow atual do n8n usa Ollama local, portanto o processamento com IA
+precisará ser alterado na próxima etapa para AWS Bedrock.
+
+Login, projetos, banco, dashboard, dataset e exportações podem ficar hospedados
+na Lightsail; a etapa seguinte troca o provider de IA.
+
+
+BACKUP
+------
+Os dados persistentes ficam em volumes Docker:
+- ylume-postgres-data
+- ylume-n8n-data
+- ylume-letsencrypt
+
+Não use:
+
+docker compose down -v
+
+pois o -v remove volumes.

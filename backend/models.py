@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+import datetime as dt
 
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -9,7 +9,19 @@ from database import Base
 class Project(Base):
     __tablename__ = "projects"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+    )
+
+    owner_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "users.id",
+            ondelete="CASCADE",
+            name="fk_projects_owner_id_users",
+        ),
+        nullable=True,
+        index=True,
+    )
 
     name: Mapped[str] = mapped_column(
         String(120),
@@ -26,9 +38,9 @@ class Project(Base):
         nullable=False,
     )
 
-    created_at: Mapped[datetime] = mapped_column(
+    created_at: Mapped[dt.datetime] = mapped_column(
         DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: dt.datetime.now(dt.timezone.utc),
         nullable=False,
     )
 
@@ -42,10 +54,15 @@ class Project(Base):
 class OutputField(Base):
     __tablename__ = "output_fields"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(
+        primary_key=True,
+    )
 
     project_id: Mapped[int] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"),
+        ForeignKey(
+            "projects.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
     )
 
