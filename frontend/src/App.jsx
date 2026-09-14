@@ -10,6 +10,18 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   "http://localhost:8001";
 
+const IS_PRODUCTION = import.meta.env.PROD;
+
+const ENVIRONMENT_LABEL =
+  IS_PRODUCTION
+    ? "Produção AWS"
+    : "Ambiente local";
+
+const AI_STATUS_LABEL =
+  IS_PRODUCTION
+    ? "Ylume AI · AWS Bedrock"
+    : "Ylume AI · ambiente de desenvolvimento";
+
 
 
 function apiFetch(
@@ -1077,7 +1089,7 @@ function App() {
 
       if (parsed.rows.length > 25) {
         setBatchMessage(
-          `CSV carregado com ${parsed.rows.length} linhas. Nesta versão local, serão processadas as primeiras 25 linhas preenchidas da coluna escolhida.`,
+          `CSV carregado com ${parsed.rows.length} linhas. Nesta versão, serão processadas as primeiras 25 linhas preenchidas da coluna escolhida.`,
         );
       } else {
         setBatchMessage(
@@ -1971,6 +1983,19 @@ function App() {
   async function handleSubmit(event) {
     event.preventDefault();
 
+    if (!form.sample_text.trim()) {
+      setStatus("error");
+      setError(
+        "Informe um conteúdo não estruturado para processar individualmente.",
+      );
+
+      document
+        .querySelector('textarea[name="sample_text"]')
+        ?.focus();
+
+      return;
+    }
+
     setStatus("loading");
     setError("");
     setResult(null);
@@ -2081,7 +2106,7 @@ function App() {
 
 
       // -----------------------------------------------------
-      // PROCESSAMENTO COM N8N + OLLAMA
+      // PROCESSAMENTO COM N8N + AWS BEDROCK
       // -----------------------------------------------------
 
       const previewResponse =
@@ -2493,7 +2518,7 @@ function App() {
           <div className="environment">
             <span />
 
-            Ambiente local
+            {ENVIRONMENT_LABEL}
           </div>
 
           <div className="user-chip">
@@ -3276,7 +3301,7 @@ function App() {
                   placeholder="Cole aqui um texto, descrição, mensagem ou registro..."
                   rows={7}
                   maxLength={10000}
-                  required
+                  
                 />
               </label>
 
@@ -3305,7 +3330,7 @@ function App() {
                   </div>
 
                   <span className="batch-limit">
-                    até 25 linhas · local
+                    até 25 linhas · IA
                   </span>
                 </div>
 
@@ -3515,9 +3540,7 @@ function App() {
                 <span className="ai-status__dot" />
 
                 <span>
-                  Ylume AI ·
-                  processamento local
-                  com Gemma 3
+                  {AI_STATUS_LABEL}
                 </span>
               </div>
 
@@ -3680,7 +3703,7 @@ function App() {
                     Resposta completa
                     recebida do pipeline
                     FastAPI → n8n →
-                    Ollama.
+                    AWS Bedrock.
                   </p>
 
                   <pre>
